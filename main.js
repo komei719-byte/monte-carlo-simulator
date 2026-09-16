@@ -62,33 +62,49 @@ function runMonteCarlo(params) {
 
       // TQQQを売却して金を買い増す場合
       if (currentTqqq > targetTqqqGross) {
-        const sellAmount = currentTqqq - targetTqqqGross;
-        // 売却部分に対する利益率（含み損の場合は0）
+        const sellAmountGross = currentTqqq - targetTqqqGross;
         const profitRatio = (currentTqqq - costBasisTqqq) / currentTqqq;
-        const taxableGain = sellAmount * Math.max(0, profitRatio);
+        const taxableGain = sellAmountGross * Math.max(0, profitRatio);
         tax = taxableGain * taxRate;
 
-        // 取得単価の更新: TQQQは売却割合に応じて縮小、金は（購入額 - 税金）を加算
-        costBasisTqqq *= (targetTqqqGross / currentTqqq);
-        costBasisGold += (sellAmount - tax);
+        // 税引後の純資産額と最終ポジションの確定
+        const netTotalPortfolio = totalBeforeRebalance - tax;
+        const nextTqqq = netTotalPortfolio * tqqqRatio;
+        const nextGold = netTotalPortfolio * goldRatio;
+
+        // 【取得価額の正確な計算】
+        // TQQQ（売却側）: 売却前後の実際の残存率で簿価を比例削減
+        costBasisTqqq *= (nextTqqq / currentTqqq);
+        // 金（買増側）: 実際に買い増された純額分だけ簿価を加算
+        costBasisGold += (nextGold - currentGold);
+
+        currentTqqq = nextTqqq;
+        currentGold = nextGold;
       } 
       // 金を売却してTQQQを買い増す場合
       else if (currentGold > targetGoldGross) {
-        const sellAmount = currentGold - targetGoldGross;
+        const sellAmountGross = currentGold - targetGoldGross;
         const profitRatio = (currentGold - costBasisGold) / currentGold;
-        const taxableGain = sellAmount * Math.max(0, profitRatio);
+        const taxableGain = sellAmountGross * Math.max(0, profitRatio);
         tax = taxableGain * taxRate;
 
-        costBasisGold *= (targetGoldGross / currentGold);
-        costBasisTqqq += (sellAmount - tax);
+        // 税引後の純資産額と最終ポジションの確定
+        const netTotalPortfolio = totalBeforeRebalance - tax;
+        const nextTqqq = netTotalPortfolio * tqqqRatio;
+        const nextGold = netTotalPortfolio * goldRatio;
+
+        // 【取得価額の正確な計算】
+        // 金（売却側）: 売却前後の実際の残存率で簿価を比例削減
+        costBasisGold *= (nextGold / currentGold);
+        // TQQQ（買増側）: 実際に買い増された純額分だけ簿価を加算
+        costBasisTqqq += (nextTqqq - currentTqqq);
+
+        currentTqqq = nextTqqq;
+        currentGold = nextGold;
       }
 
-      // 税引後の純資産額を計算し、正確な比率で再分配
-      const netTotalPortfolio = totalBeforeRebalance - tax;
-      currentTqqq = netTotalPortfolio * tqqqRatio;
-      currentGold = netTotalPortfolio * goldRatio;
-
-      yearlyResults[year].push(netTotalPortfolio);
+      const totalPortfolio = currentTqqq + currentGold;
+      yearlyResults[year].push(totalPortfolio);
     }
   }
 
