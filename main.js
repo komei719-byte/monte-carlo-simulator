@@ -5,7 +5,6 @@ let myChart = null;
 function generateNormalRandom() {
   let u1 = Math.random();
   let u2 = Math.random();
-  // 0 回避
   while (u1 === 0) u1 = Math.random();
   while (u2 === 0) u2 = Math.random();
   return Math.sqrt(-2.0 * Math.log(u1)) * Math.cos(2.0 * Math.PI * u2);
@@ -18,16 +17,31 @@ function runMonteCarlo(params) {
     tqqqRatio, goldRatio,
     tqqqReturn, tqqqRisk,
     goldReturn, goldRisk,
-    correlation
+    correlation,
+    isArithmeticReturn // 算術平均リターンかどうかのフラグ
   } = params;
 
-  // 各年の全試行結果を保持する配列 (行: 年 [0..years], 列: 各試行の資産額)
-  const yearlyResults = Array.from({ length: years + 1 }, () => []);
+  // フォームから選択値を取得
+const isArithmetic = document.querySelector('input[name="returnType"]:checked').value === 'arithmetic';
+
+// 幾何ブラウン運動のドリフト項計算
+// 算術平均なら -0.5 * σ² の調整を行い、幾何平均(CAGR)ならそのまま使用する
+const driftTqqq = isArithmetic 
+  ? (tqqqReturn - 0.5 * Math.pow(tqqqRisk, 2)) 
+  : tqqqReturn;
+
+const driftGold = isArithmetic 
+  ? (goldReturn - 0.5 * Math.pow(goldRisk, 2)) 
+  : goldReturn;
 
   // 0年目は全試行で初期資金
   for (let i = 0; i < simulations; i++) {
     yearlyResults[0].push(initialCapital);
   }
+
+  // 相関係数の範囲チェック (-1 <= rho <= 1)
+  const rho = Math.max(-1, Math.min(1, correlation));
+  const rhoScale = Math.sqrt(1 - rho * rho);
 
   // シミュレーション実行
   for (let sim = 0; sim < simulations; sim++) {
@@ -39,13 +53,13 @@ function runMonteCarlo(params) {
       const z1 = generateNormalRandom();
       const z2 = generateNormalRandom();
 
-      // 相関係数 rho を考慮した相関乱数を生成
+      // 2変量正規乱数の生成
       const zTqqq = z1;
-      const zGold = correlation * z1 + Math.sqrt(1 - correlation * correlation) * z2;
+      const zGold = rho * z1 + rhoScale * z2;
 
       // 1年後の資産額を計算 (対数正規分布モデル)
-      const rTqqq = (tqqqReturn - 0.5 * Math.pow(tqqqRisk, 2)) + tqqqRisk * zTqqq;
-      const rGold = (goldReturn - 0.5 * Math.pow(goldRisk, 2)) + goldRisk * zGold;
+      const rTqqq = driftTqqq + tqqqRisk * zTqqq;
+      const rGold = driftGold + goldRisk * zGold;
 
       currentTqqq *= Math.exp(rTqqq);
       currentGold *= Math.exp(rGold);
@@ -70,6 +84,7 @@ function calculatePercentiles(yearlyResults, years) {
   const bottom10s = [];
 
   for (let year = 0; year <= years; year++) {
+    // 数値の昇降順ソート
     const sorted = [...yearlyResults[year]].sort((a, b) => a - b);
     const count = sorted.length;
 
@@ -86,7 +101,6 @@ function renderChart(years, percentiles) {
   const ctx = document.getElementById('simChart').getContext('2d');
   const labels = Array.from({ length: years + 1 }, (_, i) => `${i}年目`);
 
-  // 既存グラフの破棄（再実行時の二重描画防止）
   if (myChart) {
     myChart.destroy();
   }
@@ -130,7 +144,7 @@ function renderChart(years, percentiles) {
         y: {
           title: { display: true, text: '資産額 ($)' },
           ticks: {
-            callback: value => '$' + value.toLocaleString()
+            callback: value => '$' + Math.round(value).toLocaleString()
           }
         },
         x: {
@@ -145,15 +159,23 @@ function renderChart(years, percentiles) {
 document.getElementById('sim-form').addEventListener('submit', function (e) {
   e.preventDefault();
 
-  // 入力値の取得と前処理
   const initialCapital = parseFloat(document.getElementById('initialCapital').value);
   const years = parseInt(document.getElementById('years').value);
   const simulations = parseInt(document.getElementById('simulations').value);
 
-  const tqqqRatio = parseFloat(document.getElementById('tqqqRatio').value) / 100;
-  const goldRatio = parseFloat(document.getElementById('goldRatio').value) / 100;
+  let rawTqqqRatio = parseFloat(document.getElementById('tqqqRatio').value);
+  let rawGoldRatio = parseFloat(document.getElementById('goldRatio').value);
 
-  // 年率パーセントを小数表記に変換
+  // 比率の自動標準化 (合計が100%になるよう補正、またはCash枠の考慮)
+  const totalRatio = rawTqqqRatio + rawGoldRatio;
+  if (totalRatio === 0) {
+    alert("アセットの比率を入力してください。");
+    return;
+  }
+
+  const tqqqRatio = rawTqqqRatio / totalRatio;
+  const goldRatio = rawGoldRatio / totalRatio;
+
   const params = {
     initialCapital,
     years,
@@ -164,10 +186,11 @@ document.getElementById('sim-form').addEventListener('submit', function (e) {
     tqqqRisk: parseFloat(document.getElementById('tqqqRisk').value) / 100,
     goldReturn: parseFloat(document.getElementById('goldReturn').value) / 100,
     goldRisk: parseFloat(document.getElementById('goldRisk').value) / 100,
-    correlation: parseFloat(document.getElementById('correlation').value)
+    correlation: parseFloat(document.getElementById('correlation').value),
+    isArithmeticReturn: true // 一般的な期待リターン（算術平均）を入力前提とする場合はtrue
   };
 
-  // シミュレーション計算の実行
+  // 計算実行
   const yearlyResults = runMonteCarlo(params);
   const percentiles = calculatePercentiles(yearlyResults, years);
 
@@ -177,7 +200,6 @@ document.getElementById('sim-form').addEventListener('submit', function (e) {
   const finalTop10 = percentiles.top10s[years];
   const finalBottom10 = percentiles.bottom10s[years];
 
-  // 元本割れ確率の計算
   const lossCount = finalYearResults.filter(v => v < initialCapital).length;
   const lossProb = ((lossCount / simulations) * 100).toFixed(1);
 
@@ -186,6 +208,6 @@ document.getElementById('sim-form').addEventListener('submit', function (e) {
   document.getElementById('bottom10-val').innerText = `$${Math.round(finalBottom10).toLocaleString()}`;
   document.getElementById('loss-prob').innerText = `${lossProb}%`;
 
-  // グラフを描画
+  // グラフ描画
   renderChart(years, percentiles);
 });
