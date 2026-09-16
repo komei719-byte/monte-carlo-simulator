@@ -26,6 +26,10 @@ function runMonteCarlo(params) {
     yearlyResults[0].push(initialCapital);
   }
 
+  // 相関係数の境界値を保護 (-1 <= correlation <= 1)
+  const safeCorr = Math.max(-1, Math.min(1, correlation));
+  const corrScale = Math.sqrt(1 - safeCorr * safeCorr);
+
   for (let sim = 0; sim < simulations; sim++) {
     let currentTqqq = initialCapital * tqqqRatio;
     let currentGold = initialCapital * goldRatio;
@@ -39,48 +43,52 @@ function runMonteCarlo(params) {
       const z2 = generateNormalRandom();
 
       const zTqqq = z1;
-      const zGold = correlation * z1 + Math.sqrt(1 - correlation * correlation) * z2;
+      const zGold = safeCorr * z1 + corrScale * z2;
 
+      // 算術平均リターンからのボラティリティドラッグ調整
       const rTqqq = (tqqqReturn - 0.5 * Math.pow(tqqqRisk, 2)) + tqqqRisk * zTqqq;
       const rGold = (goldReturn - 0.5 * Math.pow(goldRisk, 2)) + goldRisk * zGold;
 
       currentTqqq *= Math.exp(rTqqq);
       currentGold *= Math.exp(rGold);
 
-      const totalPortfolioBeforeRebalance = currentTqqq + currentGold;
+      const totalBeforeRebalance = currentTqqq + currentGold;
 
-      // 目標配分額
-      const targetTqqq = totalPortfolioBeforeRebalance * tqqqRatio;
-      const targetGold = totalPortfolioBeforeRebalance * goldRatio;
+      // 仮の目標配分額（税引前）
+      const targetTqqqGross = totalBeforeRebalance * tqqqRatio;
+      const targetGoldGross = totalBeforeRebalance * goldRatio;
 
-      // リバランスによる売却と課税の処理
+      let tax = 0;
+
       // TQQQを売却して金を買い増す場合
-      if (currentTqqq > targetTqqq) {
-        const sellAmount = currentTqqq - targetTqqq;
-        const gainRatio = Math.max(0, (currentTqqq - costBasisTqqq) / currentTqqq);
-        const taxableGain = sellAmount * gainRatio;
-        const tax = taxableGain * taxRate;
+      if (currentTqqq > targetTqqqGross) {
+        const sellAmount = currentTqqq - targetTqqqGross;
+        // 売却部分に対する利益率（含み損の場合は0）
+        const profitRatio = (currentTqqq - costBasisTqqq) / currentTqqq;
+        const taxableGain = sellAmount * Math.max(0, profitRatio);
+        tax = taxableGain * taxRate;
 
-        currentTqqq = targetTqqq;
-        currentGold = targetGold - tax; // 納税分だけポートフォリオ全体が減少
-        costBasisTqqq -= (sellAmount * (1 - gainRatio)); // 減った分だけ取得単価も減少
-        costBasisGold += (sellAmount - tax); // 買った分を取得単価に加算
+        // 取得単価の更新: TQQQは売却割合に応じて縮小、金は（購入額 - 税金）を加算
+        costBasisTqqq *= (targetTqqqGross / currentTqqq);
+        costBasisGold += (sellAmount - tax);
       } 
       // 金を売却してTQQQを買い増す場合
-      else if (currentGold > targetGold) {
-        const sellAmount = currentGold - targetGold;
-        const gainRatio = Math.max(0, (currentGold - costBasisGold) / currentGold);
-        const taxableGain = sellAmount * gainRatio;
-        const tax = taxableGain * taxRate;
+      else if (currentGold > targetGoldGross) {
+        const sellAmount = currentGold - targetGoldGross;
+        const profitRatio = (currentGold - costBasisGold) / currentGold;
+        const taxableGain = sellAmount * Math.max(0, profitRatio);
+        tax = taxableGain * taxRate;
 
-        currentGold = targetGold;
-        currentTqqq = targetTqqq - tax;
-        costBasisGold -= (sellAmount * (1 - gainRatio));
+        costBasisGold *= (targetGoldGross / currentGold);
         costBasisTqqq += (sellAmount - tax);
       }
 
-      const totalPortfolio = currentTqqq + currentGold;
-      yearlyResults[year].push(totalPortfolio);
+      // 税引後の純資産額を計算し、正確な比率で再分配
+      const netTotalPortfolio = totalBeforeRebalance - tax;
+      currentTqqq = netTotalPortfolio * tqqqRatio;
+      currentGold = netTotalPortfolio * goldRatio;
+
+      yearlyResults[year].push(netTotalPortfolio);
     }
   }
 
@@ -153,7 +161,7 @@ function renderChart(years, percentiles) {
         y: {
           title: { display: true, text: '資産額 ($)' },
           ticks: {
-            callback: value => '$' + value.toLocaleString()
+            callback: value => '$' + Math.round(value).toLocaleString()
           }
         },
         x: {
@@ -171,7 +179,6 @@ document.getElementById('sim-form').addEventListener('submit', function (e) {
   const tqqqPercent = parseFloat(document.getElementById('tqqqRatio').value);
   const goldPercent = parseFloat(document.getElementById('goldRatio').value);
 
-  // 追加要件①：資産配分が100%になるかチェック（許容誤差 0.01%）
   if (Math.abs((tqqqPercent + goldPercent) - 100) > 0.01) {
     alert(`資産配分の合計が100%になるように調整してください。（現在の合計: ${tqqqPercent + goldPercent}%）`);
     return;
@@ -181,7 +188,6 @@ document.getElementById('sim-form').addEventListener('submit', function (e) {
   const years = parseInt(document.getElementById('years').value);
   const simulations = parseInt(document.getElementById('simulations').value);
 
-  // 追加要件②：税率（日本の譲渡所得税率 20.315% を適用）
   const taxRate = 0.20315;
 
   const params = {
