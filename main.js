@@ -1,0 +1,1 @@
+console.log("Monte Carlo Simulator ready.");
