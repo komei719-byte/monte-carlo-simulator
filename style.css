@@ -33,13 +33,16 @@ header p {
 }
 
 /* レイアウト構成 */
+/* grid-layout の部分を以下に置き換え */
 .grid-layout {
   display: grid;
-  grid-template-columns: 350px 1fr;
+  grid-template-columns: 350px 1fr; /* 左: 350px, 右: 残り幅 */
   gap: 20px;
+  align-items: start;
 }
 
-@media (max-width: 850px) {
+/* 画面幅が850px以下のときだけ1カラムにする */
+@media screen and (max-width: 850px) {
   .grid-layout {
     grid-template-columns: 1fr;
   }
