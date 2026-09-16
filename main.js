@@ -21,6 +21,7 @@ function runMonteCarlo(params) {
   } = params;
 
   const yearlyResults = Array.from({ length: years + 1 }, () => []);
+  const maxDrawdowns = []; // 各試行の最大ドローダウン（割合 0.0〜1.0）を保持
 
   for (let i = 0; i < simulations; i++) {
     yearlyResults[0].push(initialCapital);
@@ -37,6 +38,10 @@ function runMonteCarlo(params) {
     // 各資産の取得単価（簿価）を管理
     let costBasisTqqq = currentTqqq;
     let costBasisGold = currentGold;
+
+    // ドローダウン計算用の最高資産額と最大ドローダウン初期化
+    let peakValue = initialCapital;
+    let maxDD = 0;
 
     for (let year = 1; year <= years; year++) {
       const z1 = generateNormalRandom();
@@ -73,9 +78,7 @@ function runMonteCarlo(params) {
         const nextGold = netTotalPortfolio * goldRatio;
 
         // 【取得価額の正確な計算】
-        // TQQQ（売却側）: 売却前後の実際の残存率で簿価を比例削減
         costBasisTqqq *= (nextTqqq / currentTqqq);
-        // 金（買増側）: 実際に買い増された純額分だけ簿価を加算
         costBasisGold += (nextGold - currentGold);
 
         currentTqqq = nextTqqq;
@@ -94,9 +97,7 @@ function runMonteCarlo(params) {
         const nextGold = netTotalPortfolio * goldRatio;
 
         // 【取得価額の正確な計算】
-        // 金（売却側）: 売却前後の実際の残存率で簿価を比例削減
         costBasisGold *= (nextGold / currentGold);
-        // TQQQ（買増側）: 実際に買い増された純額分だけ簿価を加算
         costBasisTqqq += (nextTqqq - currentTqqq);
 
         currentTqqq = nextTqqq;
@@ -105,10 +106,22 @@ function runMonteCarlo(params) {
 
       const totalPortfolio = currentTqqq + currentGold;
       yearlyResults[year].push(totalPortfolio);
+
+      // --- 最大ドローダウン（MDD）の計算 ---
+      if (totalPortfolio > peakValue) {
+        peakValue = totalPortfolio;
+      } else {
+        const currentDD = (peakValue - totalPortfolio) / peakValue;
+        if (currentDD > maxDD) {
+          maxDD = currentDD;
+        }
+      }
     }
+
+    maxDrawdowns.push(maxDD);
   }
 
-  return yearlyResults;
+  return { yearlyResults, maxDrawdowns };
 }
 
 // 3. パーセンタイル（10%, 50%, 90%）の集計計算
@@ -220,7 +233,7 @@ document.getElementById('sim-form').addEventListener('submit', function (e) {
     taxRate: taxRate
   };
 
-  const yearlyResults = runMonteCarlo(params);
+  const { yearlyResults, maxDrawdowns } = runMonteCarlo(params);
   const percentiles = calculatePercentiles(yearlyResults, years);
 
   const finalYearResults = yearlyResults[years];
@@ -231,10 +244,33 @@ document.getElementById('sim-form').addEventListener('submit', function (e) {
   const lossCount = finalYearResults.filter(v => v < initialCapital).length;
   const lossProb = ((lossCount / simulations) * 100).toFixed(1);
 
-  document.getElementById('median-val').innerText = `$${Math.round(finalMedian).toLocaleString()}`;
-  document.getElementById('top10-val').innerText = `$${Math.round(finalTop10).toLocaleString()}`;
-  document.getElementById('bottom10-val').innerText = `$${Math.round(finalBottom10).toLocaleString()}`;
-  document.getElementById('loss-prob').innerText = `${lossProb}%`;
+  // --- 追加機能: 最大ドローダウン（MDD）の統計計算 ---
+  const sortedMDD = [...maxDrawdowns].sort((a, b) => a - b);
+  const mddMedian = (sortedMDD[Math.floor(simulations * 0.5)] * 100).toFixed(1);
+  const countMDD50 = maxDrawdowns.filter(mdd => mdd >= 0.5).length;
+  const probMDD50 = ((countMDD50 / simulations) * 100).toFixed(1);
+  const countMDD70 = maxDrawdowns.filter(mdd => mdd >= 0.7).length;
+  const probMDD70 = ((countMDD70 / simulations) * 100).toFixed(1);
+
+  // UI要素が存在すれば描画・更新
+  const elemMedian = document.getElementById('median-val');
+  const elemTop10 = document.getElementById('top10-val');
+  const elemBottom10 = document.getElementById('bottom10-val');
+  const elemLoss = document.getElementById('loss-prob');
+
+  if (elemMedian) elemMedian.innerText = `$${Math.round(finalMedian).toLocaleString()}`;
+  if (elemTop10) elemTop10.innerText = `$${Math.round(finalTop10).toLocaleString()}`;
+  if (elemBottom10) elemBottom10.innerText = `$${Math.round(finalBottom10).toLocaleString()}`;
+  if (elemLoss) elemLoss.innerText = `${lossProb}%`;
+
+  // MDD表示要素が存在する場合は設定
+  const elemMddMedian = document.getElementById('mdd-median-val');
+  const elemMdd50 = document.getElementById('mdd50-prob');
+  const elemMdd70 = document.getElementById('mdd70-prob');
+
+  if (elemMddMedian) elemMddMedian.innerText = `-${mddMedian}%`;
+  if (elemMdd50) elemMdd50.innerText = `${probMDD50}%`;
+  if (elemMdd70) elemMdd70.innerText = `${probMDD70}%`;
 
   renderChart(years, percentiles);
 });

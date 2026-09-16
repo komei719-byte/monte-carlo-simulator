@@ -86,6 +86,7 @@
         <h2>シミュレーション結果</h2>
         
         <!-- サマリー指標 -->
+        <!-- サマリー指標 -->
         <div id="summary-metrics" class="metrics-grid">
           <div class="metric-box">
             <span class="label">中央値 (50%)</span>
@@ -103,8 +104,22 @@
             <span class="label">元本割れ確率</span>
             <span class="value" id="loss-prob">-</span>
           </div>
-        </div>
 
+          <!-- ★ここから追加★ -->
+          <div class="metric-box">
+            <span class="label">最大DD (中央値)</span>
+            <span class="value" id="mdd-median-val">-</span>
+          </div>
+          <div class="metric-box">
+            <span class="label">最大DD 50%以上確率</span>
+            <span class="value" id="mdd50-prob">-</span>
+          </div>
+          <div class="metric-box">
+            <span class="label">最大DD 70%以上確率</span>
+            <span class="value" id="mdd70-prob">-</span>
+          </div>
+          <!-- ★ここまで追加★ -->
+        </div>
         <!-- Chart.js グラフ描画キャンバス -->
         <div class="chart-container">
           <canvas id="simChart"></canvas>
