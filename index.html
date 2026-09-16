@@ -3,11 +3,116 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>モンテカルロシミュレーター</title>
+  <title>TQQQ & 金2倍 モンテカルロシミュレーター</title>
   <link rel="stylesheet" href="styles.css">
+  <!-- グラフ描画ライブラリ Chart.js (CDN) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
-  <h1>TQQQ & 金2倍 モンテカルロシミュレーション</h1>
+  <div class="container">
+    <header>
+      <h1>TQQQ & 金2倍 モンテカルロシミュレーター</h1>
+      <p>年1回リバランス戦略の将来資産推移を確率的にシミュレーションします。</p>
+    </header>
+
+    <main class="grid-layout">
+      <!-- 1. パラメータ入力フォーム -->
+      <section class="card input-section">
+        <h2>設定パラメータ</h2>
+        <form id="sim-form">
+          <!-- 基本設定 -->
+          <fieldset>
+            <legend>基本条件</legend>
+            <div class="form-group">
+              <label for="initialCapital">初期投資額 ($):</label>
+              <input type="number" id="initialCapital" value="10000" min="100" step="100" required>
+            </div>
+            <div class="form-group">
+              <label for="years">運用期間 (年):</label>
+              <input type="number" id="years" value="20" min="1" max="50" required>
+            </div>
+            <div class="form-group">
+              <label for="simulations">試行回数 (回):</label>
+              <input type="number" id="simulations" value="2000" min="100" max="10000" step="100" required>
+            </div>
+          </fieldset>
+
+          <!-- 資産配分設定 -->
+          <fieldset>
+            <legend>資産配分 (%)</legend>
+            <div class="form-group">
+              <label for="tqqqRatio">TQQQ 割合 (%):</label>
+              <input type="number" id="tqqqRatio" value="50" min="0" max="100" required>
+            </div>
+            <div class="form-group">
+              <label for="goldRatio">金2倍 割合 (%):</label>
+              <input type="number" id="goldRatio" value="50" min="0" max="100" required>
+            </div>
+          </fieldset>
+
+          <!-- 資産の前提条件（リターン・リスク・相関） -->
+          <fieldset>
+            <legend>市場前提データ</legend>
+            <div class="form-group">
+              <label for="tqqqReturn">TQQQ 期待リターン (%/年):</label>
+              <input type="number" id="tqqqReturn" value="20" step="0.1" required>
+            </div>
+            <div class="form-group">
+              <label for="tqqqRisk">TQQQ リスク/標準偏差 (%):</label>
+              <input type="number" id="tqqqRisk" value="50" step="0.1" required>
+            </div>
+            <hr>
+            <div class="form-group">
+              <label for="goldReturn">金2倍 期待リターン (%/年):</label>
+              <input type="number" id="goldReturn" value="8" step="0.1" required>
+            </div>
+            <div class="form-group">
+              <label for="goldRisk">金2倍 リスク/標準偏差 (%):</label>
+              <input type="number" id="goldRisk" value="25" step="0.1" required>
+            </div>
+            <hr>
+            <div class="form-group">
+              <label for="correlation">2資産の相関係数 (-1 〜 +1):</label>
+              <input type="number" id="correlation" value="-0.1" min="-1" max="1" step="0.05" required>
+            </div>
+          </fieldset>
+
+          <button type="submit" id="run-btn">シミュレーション実行</button>
+        </form>
+      </section>
+
+      <!-- 2. 結果表示エリア -->
+      <section class="card result-section">
+        <h2>シミュレーション結果</h2>
+        
+        <!-- サマリー指標 -->
+        <div id="summary-metrics" class="metrics-grid">
+          <div class="metric-box">
+            <span class="label">中央値 (50%)</span>
+            <span class="value" id="median-val">-</span>
+          </div>
+          <div class="metric-box">
+            <span class="label">上位 10% ケース</span>
+            <span class="value" id="top10-val">-</span>
+          </div>
+          <div class="metric-box">
+            <span class="label">下位 10% ケース</span>
+            <span class="value" id="bottom10-val">-</span>
+          </div>
+          <div class="metric-box">
+            <span class="label">元本割れ確率</span>
+            <span class="value" id="loss-prob">-</span>
+          </div>
+        </div>
+
+        <!-- Chart.js グラフ描画キャンバス -->
+        <div class="chart-container">
+          <canvas id="simChart"></canvas>
+        </div>
+      </section>
+    </main>
+  </div>
+
   <script src="main.js"></script>
 </body>
 </html>
